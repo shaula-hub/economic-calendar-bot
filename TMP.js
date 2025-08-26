@@ -1,51 +1,24 @@
-// Replace this section in broadcastDailyUpdate():
-// Get today's date in DD.MM.YYYY format
-var today = new Date();
-var dateStr = today.toLocaleDateString("ru-RU", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-});
+async handleStart(msg) {
+  // ... existing subscription check code ...
 
-// Format message
-var message = this.formatEventsMessage(events, dateStr);
-var messageParts = this.splitLongMessage(message);
+  const welcomeMessage = `
+🏦 **Бот экономических событий**
 
-console.log(
-  `📤 Broadcasting ${messageParts.length} message parts to ${activeUsers.length} users...`
-);
+✅ Добро пожаловать! Вы подписчик ${REQUIRED_CHANNEL}
 
-// Send to each user
-for (var userIndex = 0; userIndex < activeUsers.length; userIndex++) {
-  var user = activeUsers[userIndex];
-  try {
-    // Send all parts of the message
-    for (var i = 0; i < messageParts.length; i++) {
-      var part = messageParts[i];
-      var partHeader =
-        messageParts.length > 1 ? `(${i + 1}/${messageParts.length}) ` : "";
+📊 Я предоставляю ежедневную информацию по экономическим событиям,
+которые могут повлиять на цены активов на финансовых площадках\\.
 
-      await this.bot.sendMessage(user.chat_id, partHeader + part, {
-        parse_mode: "Markdown",
-      });
+**Доступные команды:**
+📬 /subscribe \\- Подписаться на ежедневные обновления событий  
+🔕 /unsubscribe \\- Отписаться
+📊 /status \\- Проверка статуса подписки
+🔄 /update \\- Обновить экономические данные сейчас
 
-      // Rate limiting delay between parts
-      if (i < messageParts.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      }
-    }
-    sent++;
+Для получения ежедневных данных выберите /subscribe!
+  `;
 
-    // Rate limiting delay between users
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  } catch (error) {
-    console.error(`Failed to send to ${user.telegram_user_id}:`, error.message);
-    failed++;
-
-    // Deactivate blocked users
-    if (error.response && error.response.error_code === 403) {
-      await this.db.usersModel.setUserActive(user.telegram_user_id, false);
-      console.log(`Deactivated blocked user: ${user.telegram_user_id}`);
-    }
-  }
+  await this.bot.sendMessage(chatId, welcomeMessage, {
+    parse_mode: "Markdown",
+  });
 }

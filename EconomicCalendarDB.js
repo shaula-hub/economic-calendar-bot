@@ -1,7 +1,7 @@
 const Database = require("./database");
 const EconomicEventsModel = require("./economicEventsModel");
 const TelegramUsersModel = require("./telegramUsersModel");
-const { scrapeEconomicCalendar } = require("./CalendarScrapper"); // Your scraper
+const { scrapeEconomicCalendar } = require("./calendarScrapper"); // Your scraper
 
 class EconomicCalendarDB {
   constructor() {

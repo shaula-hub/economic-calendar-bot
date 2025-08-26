@@ -1,5 +1,5 @@
 const cron = require("node-cron");
-const EconomicCalendarTelegramBot = require("./TelegramBot");
+const EconomicCalendarTelegramBot = require("./telegramBot");
 require("dotenv").config();
 
 class Scheduler {
@@ -63,19 +63,19 @@ class Scheduler {
 
         if (broadcastResult.failed > 0) {
           console.log(`⚠️ Failed to send to ${broadcastResult.failed} users`);
-          await this.sendErrorNotification(
-            `Broadcast partially failed: ${broadcastResult.failed} users unreachable`
-          );
+          // await this.sendErrorNotification(
+          //   `Broadcast partially failed: ${broadcastResult.failed} users unreachable`
+          // );
         }
       } else {
         const errorMsg = `Data update failed: ${result.message}`;
         console.log(`❌ ${errorMsg}`);
-        await this.sendErrorNotification(errorMsg);
+        // await this.sendErrorNotification(errorMsg);
       }
     } catch (error) {
       const errorMsg = `System error during update: ${error.message}`;
       console.error(`💥 ${errorMsg}`);
-      await this.sendErrorNotification(errorMsg);
+      // await this.sendErrorNotification(errorMsg);
     }
   }
 
@@ -140,7 +140,17 @@ class Scheduler {
   async stop() {
     console.log("🛑 Stopping scheduler...");
     this.isRunning = false;
-    await this.bot.close();
+
+    // Stop Telegram bot polling instead of calling close()
+    if (this.bot && this.bot.bot) {
+      try {
+        this.bot.bot.stopPolling();
+        console.log("📱 Telegram bot polling stopped");
+      } catch (error) {
+        console.log("⚠️ Error stopping bot polling:", error.message);
+      }
+    }
+
     console.log("✅ Scheduler stopped gracefully");
   }
 }

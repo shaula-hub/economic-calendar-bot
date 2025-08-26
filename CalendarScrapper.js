@@ -1,5 +1,7 @@
 const puppeteer = require("puppeteer");
 
+const fs = require("fs"); // Add this import - for DEBUG
+
 class EconomicCalendarScraper {
   constructor() {
     this.browser = null;
@@ -21,6 +23,14 @@ class EconomicCalendarScraper {
     if (this.browser) {
       await this.browser.close();
     }
+  }
+
+  // Add this logging helper function
+  logToFile(message) {
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}\n`;
+    fs.appendFileSync("/tmp/scraper-debug.log", logMessage);
+    console.log(message); // Also show in console if anyone is watching
   }
 
   parseRussianDate(dateStr) {
@@ -350,6 +360,7 @@ class EconomicCalendarScraper {
 
       const events = await this.page.evaluate((targetDate) => {
         const results = [];
+        let eventIndex = 0; // ADD THIS: Global counter for maintaining original order
 
         // Try different table row selectors
         const possibleRowSelectors = [
@@ -382,11 +393,17 @@ class EconomicCalendarScraper {
 
             console.log(`Row ${index} has ${cells.length} cells`);
 
-            // Time is usually in first cell
+            // Simplified time extraction - just take what the website gives us
             let time = null;
             const timeText = cells[0].textContent.trim();
-            if (timeText.match(/^\d{2}:\d{2}$/)) {
-              time = timeText;
+
+            console.log(`Row ${index} time: "${timeText}"`);
+
+            if (timeText.length > 0 && timeText !== "-" && timeText !== "TBA") {
+              time = timeText; // Store exactly as it appears on website
+              console.log(`✅ ACCEPTED TIME: ${time}`);
+            } else {
+              console.log(`❌ NO VALID TIME FOUND`);
             }
 
             if (!time) return; // Skip rows without valid time
@@ -469,17 +486,21 @@ class EconomicCalendarScraper {
             if (time && event) {
               const rowData = {
                 date: targetDate,
-                time,
+                time, // Keep original time for now, convert outside
                 currency: currency || "N/A",
                 volatility,
                 event,
                 fact, // Actual
                 forecast, // Forecast
                 previous, // Previous
+                originalIndex: eventIndex++, // ADD THIS: Sequential index preserving website order
               };
 
               results.push(rowData);
-              console.log(`Row ${index}:`, rowData);
+              console.log(
+                `Row ${index} with originalIndex ${rowData.originalIndex}:`,
+                rowData
+              );
             }
           } catch (rowError) {
             console.log(`Error processing row ${index}:`, rowError.message);
@@ -491,12 +512,13 @@ class EconomicCalendarScraper {
 
       console.log(`📊 Found ${events.length} events before processing`);
 
-      // Process numbers
+      // Process numbers and convert relative times
       const processedEvents = events.map((event) => ({
         ...event,
         fact: this.parseNumber(event.fact),
         forecast: this.parseNumber(event.forecast),
         previous: this.parseNumber(event.previous),
+        // originalIndex is preserved automatically from the spread operator
       }));
 
       console.log(`✅ Processed ${processedEvents.length} events`);
@@ -516,13 +538,13 @@ class EconomicCalendarScraper {
 
       console.log("🔍 Looking for Tomorrow tab...");
 
-      // NEW - Looking for Today tab
+      // Tomorrow tab selectors (fixed)
       const possibleSelectors = [
-        "#timeFrame_today",
-        'a[id="timeFrame_today"]',
-        '.newBtn.toggleButton:contains("Сегодня")',
-        'a[data-test="Today"]',
-        'a[href*="today"]',
+        "#timeFrame_tomorrow",
+        'a[id="timeFrame_tomorrow"]',
+        '.newBtn.toggleButton:contains("Завтра")',
+        'a[data-test="Tomorrow"]',
+        'a[href*="tomorrow"]',
       ];
 
       let tomorrowClicked = false;
@@ -732,6 +754,7 @@ class EconomicCalendarScraper {
 
       const events = await this.page.evaluate((targetDate) => {
         const results = [];
+        let eventIndex = 0; // ADD THIS: Global counter for maintaining original order
 
         // Try different table row selectors
         const possibleRowSelectors = [
@@ -764,11 +787,17 @@ class EconomicCalendarScraper {
 
             console.log(`Row ${index} has ${cells.length} cells`);
 
-            // Time is usually in first cell
+            // Simplified time extraction - just take what the website gives us
             let time = null;
             const timeText = cells[0].textContent.trim();
-            if (timeText.match(/^\d{2}:\d{2}$/)) {
-              time = timeText;
+
+            console.log(`Row ${index} time: "${timeText}"`);
+
+            if (timeText.length > 0 && timeText !== "-" && timeText !== "TBA") {
+              time = timeText; // Store exactly as it appears on website
+              console.log(`✅ ACCEPTED TIME: ${time}`);
+            } else {
+              console.log(`❌ NO VALID TIME FOUND`);
             }
 
             if (!time) return; // Skip rows without valid time
@@ -851,17 +880,21 @@ class EconomicCalendarScraper {
             if (time && event) {
               const rowData = {
                 date: targetDate,
-                time,
+                time, // Keep original time for now, convert outside
                 currency: currency || "N/A",
                 volatility,
                 event,
                 fact, // Actual (rightmost column)
                 forecast, // Forecast (leftmost of the three)
                 previous, // Previous (middle column)
+                originalIndex: eventIndex++, // ADD THIS: Sequential index preserving website order
               };
 
               results.push(rowData);
-              console.log(`Row ${index}:`, rowData);
+              console.log(
+                `Row ${index} with originalIndex ${rowData.originalIndex}:`,
+                rowData
+              );
             }
           } catch (rowError) {
             console.log(`Error processing row ${index}:`, rowError.message);
@@ -873,12 +906,13 @@ class EconomicCalendarScraper {
 
       console.log(`📊 Found ${events.length} events before processing`);
 
-      // Process numbers
+      // Process numbers and convert relative times
       const processedEvents = events.map((event) => ({
         ...event,
         fact: this.parseNumber(event.fact),
         forecast: this.parseNumber(event.forecast),
         previous: this.parseNumber(event.previous),
+        // originalIndex is preserved automatically from the spread operator
       }));
 
       console.log(`✅ Processed ${processedEvents.length} events`);
@@ -896,6 +930,11 @@ async function scrapeEconomicCalendar() {
 
   try {
     await scraper.init();
+
+    // TEMPORARY DEBUG - check table structure first
+    // console.log("🔍 DEBUGGING TABLE STRUCTURE...");
+    // await scraper.debugTableStructure();
+
     // IMPORTANT: Use the smart current day scraper
     const data = await scraper.scrapeTodayData();
     console.log(

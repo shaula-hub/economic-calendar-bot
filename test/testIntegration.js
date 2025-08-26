@@ -83,7 +83,7 @@ async function testScraper() {
   console.log("🕷️ Testing scraper...");
 
   try {
-    const { scrapeEconomicCalendar } = require("../code3");
+    const { scrapeEconomicCalendar } = require("../calendarScrapper");
     const data = await scrapeEconomicCalendar();
 
     if (data && data.length > 0) {

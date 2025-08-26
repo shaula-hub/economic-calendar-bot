@@ -2,6 +2,8 @@ const TelegramBot = require("node-telegram-bot-api");
 const EconomicCalendarDB = require("./economicCalendarDB");
 require("dotenv").config();
 
+const REQUIRED_CHANNEL = process.env.REQUIRED_CHANNEL_USERNAME || "@ait_biz";
+
 class EconomicCalendarTelegramBot {
   constructor() {
     this.token = process.env.TELEGRAM_BOT_TOKEN;
@@ -30,10 +32,9 @@ class EconomicCalendarTelegramBot {
       console.log("🔧 Setting up command menu...");
 
       var commands = [
-        { command: "start", description: "🏦 Старт и информация о боте" },
-        { command: "events", description: "📋 События на сегодня" },
+        { command: "start", description: "🦅 Старт и информация о боте" },
         { command: "subscribe", description: "📬 Подписаться на обновления" },
-        { command: "unsubscribe", description: "🔕 Отписаться" },
+        { command: "unsubscribe", description: "📕 Отписаться" },
         { command: "update", description: "🔄 Обновить данные сейчас" },
         { command: "status", description: "📊 Статус подписки" },
       ];
@@ -68,12 +69,7 @@ class EconomicCalendarTelegramBot {
       await this.handleUnsubscribe(msg);
     });
 
-    // Get events command
-    this.bot.onText(/\/events/, async (msg) => {
-      await this.handleGetEvents(msg);
-    });
-
-    // Update data command (admin)
+    // Update data command
     this.bot.onText(/\/update/, async (msg) => {
       await this.handleUpdateData(msg);
     });
@@ -89,35 +85,147 @@ class EconomicCalendarTelegramBot {
     });
   }
 
-  async handleStart(msg) {
+  async checkChannelSubscriptionMiddleware(msg) {
+    const userId = msg.from.id;
     const chatId = msg.chat.id;
+
+    try {
+      // First ensure user is in database
+      await this.db.usersModel.addUser({
+        telegram_user_id: userId,
+        chat_id: chatId,
+        username: msg.from.username || null,
+        first_name: msg.from.first_name || "Unknown",
+        last_name: msg.from.last_name || null,
+      });
+
+      // Check channel subscription
+      const isSubscribed = await this.db.usersModel.checkChannelSubscription(
+        this.bot,
+        userId,
+        REQUIRED_CHANNEL
+      );
+
+      // Update subscription status in database
+      await this.db.usersModel.updateSubscriptionStatus(userId, isSubscribed, {
+        username: msg.from.username,
+        first_name: msg.from.first_name,
+        last_name: msg.from.last_name,
+      });
+
+      return isSubscribed;
+    } catch (error) {
+      console.error("❌ Error in subscription middleware:", error);
+      return false; // Fail closed for security
+    }
+  }
+
+  async sendSubscriptionRequired(chatId) {
+    const channelUrl = `https://t.me/${REQUIRED_CHANNEL.substring(1)}`;
+    const message = `
+<b>🔒 Доступ ограничен</b>
+
+Для использования этого бота необходимо быть подписчиком канала ${channelUrl}
+
+<b>📢 Подпишитесь на канал:</b>
+👆 Нажмите на ссылку выше
+
+<b>✅ После подписки:</b>
+Вернитесь сюда и нажмите /start
+`.trim();
+
+    await this.bot.sendMessage(chatId, message, {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "📢 Подписаться на канал",
+              url: channelUrl,
+            },
+          ],
+        ],
+      },
+    });
+  }
+
+  async sendCongratulationMessage(chatId) {
+    const channelUrl = `https://t.me/${REQUIRED_CHANNEL.substring(1)}`;
+    const message = `
+<b>🎉 Поздравляем!</b>
+
+✅ Вы успешно подписались на канал ${channelUrl}
+🤖 Теперь у вас есть полный доступ к боту экономического календаря!
+
+<b>📊 Что вы можете делать:</b>
+📬 /subscribe - Получать ежедневные обновления
+🔄 /update - Обновить данные вручную
+
+<b>💡 Совет:</b> Используйте /subscribe чтобы получать график экономических событий каждый день!
+`.trim();
+
+    await this.bot.sendMessage(chatId, message, { parse_mode: "HTML" });
+  }
+
+  async handleStart(msg) {
+    const channelUrl = `https://t.me/${REQUIRED_CHANNEL.substring(1)}`;
+    const chatId = msg.chat.id;
+
+    const isSubscribed = await this.checkChannelSubscriptionMiddleware(msg);
+
+    if (!isSubscribed) {
+      await this.sendSubscriptionRequired(chatId);
+      return;
+    }
+
+    const user = await this.db.usersModel.getUserByChatId(chatId);
+    const isNewSubscriber =
+      user &&
+      user.subscription_date &&
+      Date.now() - new Date(user.subscription_date).getTime() < 60000;
+
+    if (isNewSubscriber) {
+      await this.sendCongratulationMessage(chatId);
+      return;
+    }
+
     const welcomeMessage = `
-🏦 **Бот экономических событий**
+<b>🦅 Бот экономических событий</b>
 
-Добро пожаловать! Я предоставляю ежедневную информацию по экономическим событиям,
-которые могут повлиять на цены на активы на финансовых площадках.
-Обновление раз в сутки по Гринвичу или по запросу /update.
+✅ Добро пожаловать! Вы подписчик ${channelUrl}
 
-**Доступные команды:**
-📋 /events - Показать сегодняшние экономические события
-📬 /subscribe - Подписаться на ежедневные обновления событий
-🔕 /unsubscribe - Отписаться
+📊 Я предоставляю ежедневную информацию по экономическим событиям,
+которые могут повлиять на цены активов на финансовых площадках.
+
+<b>Доступные команды:</b>
+📬 /subscribe - Подписаться на ежедневные обновления событий  
+📕 /unsubscribe - Отписаться
 📊 /status - Проверка статуса подписки
 🔄 /update - Обновить экономические данные сейчас
 
-Для получения ежедневных экономических данные выберитее /subscribe!
-    `;
+Для получения ежедневных данных выберите /subscribe!
+`.trim();
 
     await this.bot.sendMessage(chatId, welcomeMessage, {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
     });
   }
 
   async handleSubscribe(msg) {
+    const channelUrl = `https://t.me/${REQUIRED_CHANNEL.substring(1)}`;
     const chatId = msg.chat.id;
+
+    const isSubscribed = await this.checkChannelSubscriptionMiddleware(msg);
+
+    if (!isSubscribed) {
+      await this.sendSubscriptionRequired(chatId);
+      return;
+    }
+
     const user = msg.from;
 
     try {
+      // First add/update user info
       await this.db.usersModel.addUser({
         telegram_user_id: user.id,
         chat_id: chatId,
@@ -126,11 +234,16 @@ class EconomicCalendarTelegramBot {
         last_name: user.last_name || null,
       });
 
-      await this.bot.sendMessage(
-        chatId,
-        "✅ **Успешная подписка!**\n\nВы будете получать график планируемых экономических событий.",
-        { parse_mode: "Markdown" }
-      );
+      // Explicitly activate the user for bot notifications
+      await this.db.usersModel.setUserActive(user.id, true);
+
+      const message = `<b>✅ Успешная подписка!</b>
+
+📊 Вы будете получать график планируемых экономических событий каждый день.
+
+💡 Не забудьте подписаться на наш канал ${channelUrl} для получения дополнительных материалов!`;
+
+      await this.bot.sendMessage(chatId, message, { parse_mode: "HTML" });
     } catch (error) {
       console.error("Error subscribing user:", error);
       await this.bot.sendMessage(
@@ -144,76 +257,66 @@ class EconomicCalendarTelegramBot {
     const chatId = msg.chat.id;
 
     try {
-      await this.db.usersModel.setUserActive(msg.from.id, false);
-      await this.bot.sendMessage(
-        chatId,
-        "✅ Вы успешно отписались от получения графика планируемых экономических событий."
-      );
-    } catch (error) {
-      await this.bot.sendMessage(
-        chatId,
-        "❌ You may not be subscribed. Use /subscribe first."
-      );
-    }
-  }
+      // Directly unsubscribe without checking channel subscription
+      // User should be able to unsubscribe from bot notifications regardless
+      const result = await this.db.usersModel.setUserActive(msg.from.id, false);
 
-  async handleGetEvents(msg) {
-    var chatId = msg.chat.id;
-
-    try {
-      var today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-      var events = await this.db.eventsModel.getEventsByDate(today);
-
-      if (events.length === 0) {
+      if (result) {
         await this.bot.sendMessage(
           chatId,
-          "📅 На сегодня экономические события не запланированы."
+          "✅ Вы успешно отписались от получения графика планируемых экономических событий.\n\nЧтобы возобновить подписку, используйте /subscribe"
         );
-        return;
-      }
-
-      // Get today's date in DD.MM.YYYY format
-      var dateStr = new Date().toLocaleDateString("ru-RU", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      });
-
-      var message = this.formatEventsMessage(events, dateStr);
-      var messageParts = this.splitLongMessage(message);
-
-      // Send all parts
-      for (var i = 0; i < messageParts.length; i++) {
-        var part = messageParts[i];
-        var partHeader =
-          messageParts.length > 1 ? `(${i + 1}/${messageParts.length}) ` : "";
-
-        await this.bot.sendMessage(chatId, partHeader + part, {
-          parse_mode: "Markdown",
-        });
-
-        if (i < messageParts.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 200));
-        }
+      } else {
+        await this.bot.sendMessage(
+          chatId,
+          "❌ Ошибка при отписке. Попробуйте еще раз."
+        );
       }
     } catch (error) {
-      console.error("Error getting events:", error);
+      console.error("Error unsubscribing user:", error);
       await this.bot.sendMessage(
         chatId,
-        "❌ Error retrieving events. Please try again."
+        "❌ Вы не подписаны на рассылку. Используйте /subscribe для подписки."
       );
     }
   }
 
   async handleUpdateData(msg) {
-    var chatId = msg.chat.id;
+    const chatId = msg.chat.id;
+
+    // Check subscription first
+    const isSubscribed = await this.checkChannelSubscriptionMiddleware(msg);
+
+    if (!isSubscribed) {
+      await this.sendSubscriptionRequired(chatId);
+      return;
+    }
+
+    // Check if user is active (subscribed to bot notifications)
+    try {
+      const user = await this.db.usersModel.getUserByChatId(chatId);
+      if (!user || !user.is_active) {
+        await this.bot.sendMessage(
+          chatId,
+          "📵 Вы отписались от уведомлений бота.\n\nИспользуйте /subscribe чтобы снова получать данные."
+        );
+        return;
+      }
+    } catch (error) {
+      console.error("Error checking user active status:", error);
+      await this.bot.sendMessage(
+        chatId,
+        "❌ Ошибка проверки статуса пользователя."
+      );
+      return;
+    }
 
     try {
       // Send initial update message
       await this.bot.sendMessage(
         chatId,
-        "🔄 **Updating economic data...**\nPlease wait...",
-        { parse_mode: "Markdown" }
+        "🔄 <b>Updating economic data...</b>\nPlease wait...",
+        { parse_mode: "HTML" }
       );
 
       // Update the database
@@ -251,7 +354,7 @@ class EconomicCalendarTelegramBot {
                 : "";
 
             await this.bot.sendMessage(chatId, partHeader + part, {
-              parse_mode: "Markdown",
+              parse_mode: "HTML",
             });
 
             if (i < messageParts.length - 1) {
@@ -267,8 +370,8 @@ class EconomicCalendarTelegramBot {
       } else {
         await this.bot.sendMessage(
           chatId,
-          `❌ **Update failed:** ${result.message}`,
-          { parse_mode: "Markdown" }
+          `❌ <b>Update failed:</b> ${result.message}`,
+          { parse_mode: "HTML" }
         );
       }
     } catch (error) {
@@ -278,7 +381,14 @@ class EconomicCalendarTelegramBot {
   }
 
   async handleStatus(msg) {
+    const channelUrl = `https://t.me/${REQUIRED_CHANNEL.substring(1)}`;
     const chatId = msg.chat.id;
+    const isSubscribed = await this.checkChannelSubscriptionMiddleware(msg);
+
+    if (!isSubscribed) {
+      await this.sendSubscriptionRequired(chatId);
+      return;
+    }
 
     try {
       const user = await this.db.usersModel.getUserByChatId(chatId);
@@ -286,78 +396,91 @@ class EconomicCalendarTelegramBot {
       if (!user) {
         await this.bot.sendMessage(
           chatId,
-          "❌ You are not subscribed.\nUse /subscribe to start receiving updates."
+          "❌ Пользователь не найден в базе данных.\nИспользуйте /subscribe для регистрации."
         );
         return;
       }
 
-      const status = user.is_active ? "✅ Active" : "❌ Inactive";
-      const subscribeDate = new Date(user.created_at).toLocaleDateString();
+      // Show bot subscription status based on is_active field
+      const botStatus = user.is_active
+        ? "✅ Активен (получаете рассылку)"
+        : "❌ Неактивен (рассылка отключена)";
 
-      const message = `
-📊 **Subscription Status**
+      const channelStatus = isSubscribed ? "✅ Подписан" : "❌ Не подписан";
+      const subscribeDate = user.created_at
+        ? new Date(user.created_at).toLocaleDateString("ru-RU")
+        : "Неизвестно";
 
-Status: ${status}
-Subscribed: ${subscribeDate}
-Username: ${user.username || "Not set"}
-Name: ${user.first_name} ${user.last_name || ""}
-      `;
+      const username = user.username || "Не установлено";
+      const firstName = user.first_name || "";
+      const lastName = user.last_name || "";
 
-      await this.bot.sendMessage(chatId, message, { parse_mode: "Markdown" });
+      const message = `<b>📊 Статус подписки</b>
+
+Статус бота: ${botStatus}
+Канал ${channelUrl}: ${channelStatus}
+Дата регистрации: ${subscribeDate}
+Имя пользователя: ${username ? "@" + username : "Не установлено"}
+Имя: ${firstName} ${lastName}`.trim();
+
+      await this.bot.sendMessage(chatId, message, { parse_mode: "HTML" });
     } catch (error) {
       console.error("Error checking status:", error);
-      await this.bot.sendMessage(chatId, "❌ Error checking status.");
+      await this.bot.sendMessage(chatId, "❌ Ошибка проверки статуса.");
     }
   }
 
   formatEventsMessage(events, dateStr) {
-    let message = `📈 **Economic Events on ${dateStr}**\n\n`;
+    let message = `<b>📈 Экономические события на ${dateStr}</b>\n\n`;
 
-    // Group events by time
-    const eventsByTime = {};
+    // Events are already sorted by original_index from the database query
+    // Just group them by time while preserving order
+    const eventsByTime = new Map(); // Map preserves insertion order
+
     events.forEach((event) => {
-      const time = event.time.substring(0, 5); // HH:MM format
-      if (!eventsByTime[time]) eventsByTime[time] = [];
-      eventsByTime[time].push(event);
+      const timeKey = event.time;
+
+      if (!eventsByTime.has(timeKey)) {
+        eventsByTime.set(timeKey, []);
+      }
+      eventsByTime.get(timeKey).push(event);
     });
 
-    // Sort times and format events
-    Object.keys(eventsByTime)
-      .sort()
-      .forEach((time) => {
-        message += `⏰ ====== ${time} ====== 🎯\n`;
+    // Display groups in the order they were added
+    for (const [timeKey, timeEvents] of eventsByTime) {
+      message += `⏰ ====== ${timeKey} ====== 🎯\n`;
 
-        eventsByTime[time].forEach((event) => {
-          const stars = this.getVolatilityStars(event.volatility);
-          message += `${stars} **${event.currency}** - ${event.event}\n`;
+      timeEvents.forEach((event) => {
+        const stars = this.getVolatilityStars(event.volatility);
+        message += `${stars} <b>${event.currency}</b> - ${event.event}\n`;
 
-          if (
-            event.previous !== null ||
-            event.forecast !== null ||
-            event.fact !== null
-          ) {
-            const values = [];
+        if (
+          event.previous !== null ||
+          event.forecast !== null ||
+          event.fact !== null
+        ) {
+          const values = [];
 
-            if (event.previous !== null && event.previous !== undefined) {
-              values.push(`📋 Предыдущий: ${event.previous}`);
-            }
-
-            if (event.forecast !== null && event.forecast !== undefined) {
-              values.push(`📊 Прогноз: ${event.forecast}`);
-            }
-
-            if (event.fact !== null && event.fact !== undefined) {
-              values.push(`✅ **Факт: ${event.fact}**`);
-            }
-
-            if (values.length > 0) {
-              message += `   ${values.join("\n   ")}\n`;
-            }
+          if (event.previous !== null && event.previous !== undefined) {
+            values.push(`📋 Предыдущий: ${event.previous}`);
           }
 
-          message += "\n";
-        });
+          if (event.forecast !== null && event.forecast !== undefined) {
+            values.push(`📊 Прогноз: ${event.forecast}`);
+          }
+
+          if (event.fact !== null && event.fact !== undefined) {
+            values.push(`✅ <b>Факт: ${event.fact}</b>`);
+          }
+
+          if (values.length > 0) {
+            message += `   ${values.join("\n   ")}\n`;
+          }
+        }
+
+        message += "\n";
       });
+    }
 
     return message;
   }
@@ -402,7 +525,7 @@ Name: ${user.first_name} ${user.last_name || ""}
       case 1:
         return "🟢"; // Low impact
       default:
-        return "📍"; // No impact data
+        return "📄"; // No impact data
     }
   }
 
@@ -457,7 +580,7 @@ Name: ${user.first_name} ${user.last_name || ""}
                 : "";
 
             await this.bot.sendMessage(user.chat_id, partHeader + part, {
-              parse_mode: "Markdown",
+              parse_mode: "HTML",
             });
 
             // Rate limiting delay between parts

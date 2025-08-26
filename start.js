@@ -23,7 +23,7 @@ async function main() {
     console.log("   05:00 - Send daily broadcast");
     console.log("\n🔧 Available manual commands in Telegram:");
     console.log("   /update - Manual data update");
-    console.log("   /events - View today's events");
+    // console.log("   /events - View today's events");
     console.log("   /subscribe - Subscribe to updates");
 
     // Handle shutdown gracefully

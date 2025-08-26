@@ -1,4 +1,4 @@
-const { EconomicCalendarScraper } = require("../CalendarScrapper");
+const { EconomicCalendarScraper } = require("../calendarScrapper");
 
 async function findCurrentDayData() {
   const scraper = new EconomicCalendarScraper();

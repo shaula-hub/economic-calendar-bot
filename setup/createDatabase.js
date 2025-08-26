@@ -121,26 +121,47 @@ class DatabaseSetup {
 
       // Create telegram_users table
       const telegramUsersTable = `
-      CREATE TABLE IF NOT EXISTS telegram_users (
-        id SERIAL PRIMARY KEY,
-        telegram_user_id BIGINT UNIQUE NOT NULL,
-        chat_id BIGINT NOT NULL,
-        username VARCHAR(255),
-        first_name VARCHAR(255),
-        last_name VARCHAR(255),
-        is_active BOOLEAN DEFAULT true,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      )
-    `;
+        CREATE TABLE IF NOT EXISTS telegram_users (
+          id SERIAL PRIMARY KEY,
+          telegram_user_id BIGINT UNIQUE NOT NULL,
+          chat_id BIGINT NOT NULL,
+          username VARCHAR(255),
+          first_name VARCHAR(255),
+          last_name VARCHAR(255),
+          is_active BOOLEAN DEFAULT true,
+          channel_subscribed BOOLEAN DEFAULT false,
+          subscription_date TIMESTAMP,
+          last_subscription_check TIMESTAMP,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `;
+
+      await this.adminClient.query(subscriptionEventsTable);
+      console.log("✅ Table subscription_events created");
+
+      const subscriptionEventsTable = `
+  CREATE TABLE IF NOT EXISTS subscription_events (
+    id SERIAL PRIMARY KEY,
+    telegram_user_id BIGINT NOT NULL,
+    event_type VARCHAR(20) NOT NULL, -- 'subscribed', 'unsubscribed', 'check_failed'
+    event_date TIMESTAMP DEFAULT NOW(),
+    user_data JSONB, -- Store name, username, etc.
+    FOREIGN KEY (telegram_user_id) REFERENCES telegram_users(telegram_user_id)
+  )
+`;
 
       // Create indexes
       const createIndexes = `
-      CREATE INDEX IF NOT EXISTS idx_economic_events_date ON economic_events(date);
-      CREATE INDEX IF NOT EXISTS idx_economic_events_currency ON economic_events(currency);
-      CREATE INDEX IF NOT EXISTS idx_telegram_users_active ON telegram_users(is_active) WHERE is_active = true;
-      CREATE INDEX IF NOT EXISTS idx_telegram_users_chat_id ON telegram_users(chat_id);
-    `;
+  CREATE INDEX IF NOT EXISTS idx_economic_events_date ON economic_events(date);
+  CREATE INDEX IF NOT EXISTS idx_economic_events_currency ON economic_events(currency);
+  CREATE INDEX IF NOT EXISTS idx_telegram_users_active ON telegram_users(is_active) WHERE is_active = true;
+  CREATE INDEX IF NOT EXISTS idx_telegram_users_chat_id ON telegram_users(chat_id);
+  CREATE INDEX IF NOT EXISTS idx_telegram_users_channel_subscribed ON telegram_users(channel_subscribed);
+  CREATE INDEX IF NOT EXISTS idx_subscription_events_user_id ON subscription_events(telegram_user_id);
+  CREATE INDEX IF NOT EXISTS idx_subscription_events_type ON subscription_events(event_type);
+  CREATE INDEX IF NOT EXISTS idx_subscription_events_date ON subscription_events(event_date);
+`;
 
       await this.adminClient.query(economicEventsTable);
       console.log("✅ Table economic_events created");

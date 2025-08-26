@@ -21,9 +21,10 @@ class EconomicEventsModel {
 
     console.log(`🗑️ Clearing events for dates: ${dates.join(", ")}`);
 
+    // MODIFIED: Added original_index to the INSERT query
     const insertQuery = `
-    INSERT INTO economic_events (date, time, currency, volatility, event, fact, forecast, previous)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    INSERT INTO economic_events (date, time, currency, volatility, event, fact, forecast, previous, original_index)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
   `;
 
     try {
@@ -54,6 +55,9 @@ class EconomicEventsModel {
           event.fact,
           event.forecast,
           event.previous,
+          event.originalIndex !== undefined
+            ? event.originalIndex
+            : insertedCount, // ADDED: original_index
         ]);
         insertedCount++;
       }
@@ -71,8 +75,9 @@ class EconomicEventsModel {
 
   async getAllEvents() {
     try {
+      // MODIFIED: Order by original_index instead of time
       const result = await this.db.query(
-        "SELECT * FROM economic_events ORDER BY date, time"
+        "SELECT * FROM economic_events ORDER BY date, original_index, time"
       );
       return result.rows;
     } catch (error) {
@@ -83,8 +88,9 @@ class EconomicEventsModel {
 
   async getEventsByDate(date) {
     try {
+      // MODIFIED: Order by original_index instead of time
       const result = await this.db.query(
-        "SELECT * FROM economic_events WHERE date = $1 ORDER BY time",
+        "SELECT * FROM economic_events WHERE date = $1 ORDER BY original_index, time",
         [date]
       );
       return result.rows;

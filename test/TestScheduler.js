@@ -1,5 +1,5 @@
 const cron = require("node-cron");
-const EconomicCalendarTelegramBot = require("../TelegramBot");
+const EconomicCalendarTelegramBot = require("../telegramBot");
 require("dotenv").config();
 
 class TestSchedulerWithTelegram {
