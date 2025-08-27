@@ -2,21 +2,20 @@
   "name": "economic-calendar",
   "private": true,
   "version": "0.0.0",
-  "scripts": {    
+  "scripts": {
     "start": "node start.js",
     "dev": "node test/testScheduler.js",
-    "setup": "node setup/createDatabase.js",    
+    "setup": "node setup/createDatabase.js",
     "deploy": "gh-pages -d dist"
-},
-
+  },
   "dependencies": {
     "dotenv": "^17.2.1",
     "node-cron": "^4.2.1",
-    "node-telegram-bot-api": "^0.66.0",
+    "node-telegram-bot-api": "^0.63.0",
     "pg": "^8.16.3",
     "puppeteer": "^24.15.0"
   },
   "devDependencies": {
     "gh-pages": "^6.3.0"
   }
-  }
+}
